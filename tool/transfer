@@ -1,0 +1,219 @@
+"""
+Script to convert npz training data to the LeRobot dataset v2.0 format.
+
+Example usage: uv run toollllllll/transfer --raw-dir train_data/train --repo-id <org>/<dataset-name>
+"""
+
+import dataclasses
+from pathlib import Path
+import shutil
+from typing import Literal
+
+from lerobot.common.datasets.lerobot_dataset import HF_LEROBOT_HOME
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+import numpy as np
+import torch
+import tqdm
+import tyro
+
+
+@dataclasses.dataclass(frozen=True)
+class DatasetConfig:
+    use_videos: bool = True
+    tolerance_s: float = 0.0001
+    image_writer_processes: int = 4
+    image_writer_threads: int = 8
+    video_backend: str | None = None
+
+
+DEFAULT_DATASET_CONFIG = DatasetConfig()
+
+
+def create_empty_dataset(
+    repo_id: str,
+    robot_type: str,
+    fps: int,
+    mode: Literal["video", "image"] = "video",
+    dataset_config: DatasetConfig = DEFAULT_DATASET_CONFIG,
+) -> LeRobotDataset:
+    """Create an empty LeRobot dataset with the proper structure."""
+    
+    # Define features based on your data format
+    features = {
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (8,),  # jiont_states has 8 dimensions
+            "names": ["joint_states"],
+        },
+        "observation.end_effector_state": {
+            "dtype": "float32", 
+            "shape": (8,),  # ee_states has 8 dimensions
+            "names": ["ee_states"],
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": (7,),  # actions has 7 dimensions
+            "names": ["actions"],
+        },
+        "observation.images.top": {
+            "dtype": mode,
+            "shape": (3, 256, 256),  # CHW format
+            "names": ["channels", "height", "width"],
+        },
+        "observation.images.wrist": {
+            "dtype": mode,
+            "shape": (3, 256, 256),  # CHW format
+            "names": ["channels", "height", "width"],
+        },
+    }
+
+    # Remove existing dataset if it exists
+    if Path(HF_LEROBOT_HOME / repo_id).exists():
+        shutil.rmtree(HF_LEROBOT_HOME / repo_id)
+
+    return LeRobotDataset.create(
+        repo_id=repo_id,
+        fps=fps,
+        robot_type=robot_type,
+        features=features,
+        use_videos=dataset_config.use_videos,
+        tolerance_s=dataset_config.tolerance_s,
+        image_writer_processes=dataset_config.image_writer_processes,
+        image_writer_threads=dataset_config.image_writer_threads,
+        video_backend=dataset_config.video_backend,
+    )
+
+
+def load_raw_episode_data(ep_path: Path) -> dict:
+    """Load data from a single npz file."""
+    data = np.load(ep_path)
+    
+    # Convert to torch tensors
+    # Note: images are in HWC format (52, 256, 256, 3), need to transpose to CHW
+    images = torch.from_numpy(data["images"]).permute(0, 3, 1, 2).float()  # (52, 3, 256, 256)
+    wrist_images = torch.from_numpy(data["wrist_images"]).permute(0, 3, 1, 2).float()  # (52, 3, 256, 256)
+    
+    # Normalize images to [0, 1] if they're uint8
+    if data["images"].dtype == np.uint8:
+        images = images / 255.0
+        wrist_images = wrist_images / 255.0
+    
+    return {
+        "actions": torch.from_numpy(data["actions"]),
+        "images": images,
+        "wrist_images": wrist_images,
+        "joint_states": torch.from_numpy(data["jiont_states"]),  # Note: typo in original data
+        "ee_states": torch.from_numpy(data["ee_states"]),
+    }
+
+
+def populate_dataset(
+    dataset: LeRobotDataset,
+    npz_files: list[Path],
+    task: str,
+    episodes: list[int] | None = None,
+) -> LeRobotDataset:
+    """Populate the dataset with data from npz files."""
+    
+    if episodes is None:
+        episodes = range(len(npz_files))
+
+    for ep_idx in tqdm.tqdm(episodes, desc="Processing episodes"):
+        ep_path = npz_files[ep_idx]
+        
+        # Load episode data
+        ep_data = load_raw_episode_data(ep_path)
+        num_frames = ep_data["actions"].shape[0]
+
+        # Add each frame to the dataset
+        for i in range(num_frames):
+            frame = {
+                "observation.state": ep_data["joint_states"][i],
+                "observation.end_effector_state": ep_data["ee_states"][i],
+                "action": ep_data["actions"][i],
+                "observation.images.top": ep_data["images"][i],
+                "observation.images.wrist": ep_data["wrist_images"][i],
+                "task": task,
+            }
+            
+            dataset.add_frame(frame)
+
+        # Save the complete episode
+        dataset.save_episode()
+
+    return dataset
+
+
+def convert_npz_to_lerobot(
+    raw_dir: Path,
+    repo_id: str,
+    task: str = "manipulation_task",
+    robot_type: str = "custom_robot",
+    fps: int = 3,
+    *,
+    episodes: list[int] | None = None,
+    push_to_hub: bool = False,
+    mode: Literal["video", "image"] = "video",
+    dataset_config: DatasetConfig = DEFAULT_DATASET_CONFIG,
+):
+    """
+    Convert npz training data to LeRobot dataset format.
+    
+    Args:
+        raw_dir: Directory containing .npz files
+        repo_id: Repository ID for the dataset (e.g., "username/dataset-name")
+        task: Task name/description
+        robot_type: Type of robot
+        fps: Frames per second of the data
+        episodes: Optional list of specific episode indices to convert
+        push_to_hub: Whether to push the dataset to HuggingFace Hub
+        mode: "video" or "image" mode for storing visual data
+        dataset_config: Configuration for dataset creation
+    """
+    
+    # Remove existing dataset if it exists
+    if (HF_LEROBOT_HOME / repo_id).exists():
+        shutil.rmtree(HF_LEROBOT_HOME / repo_id)
+
+    # Check if raw directory exists
+    if not raw_dir.exists():
+        raise ValueError(f"Raw directory does not exist: {raw_dir}")
+
+    # Get all npz files
+    npz_files = sorted(raw_dir.glob("*.npz"))
+    
+    if not npz_files:
+        raise ValueError(f"No .npz files found in {raw_dir}")
+    
+    print(f"Found {len(npz_files)} npz files in {raw_dir}")
+
+    # Create empty dataset
+    dataset = create_empty_dataset(
+        repo_id,
+        robot_type=robot_type,
+        fps=fps,
+        mode=mode,
+        dataset_config=dataset_config,
+    )
+    
+    # Populate dataset with data
+    dataset = populate_dataset(
+        dataset,
+        npz_files,
+        task=task,
+        episodes=episodes,
+    )
+    
+    print(f"\nDataset created successfully at {HF_LEROBOT_HOME / repo_id}")
+    print(f"Total episodes: {dataset.num_episodes}")
+    print(f"Total frames: {dataset.num_frames}")
+
+    # # Optionally push to hub
+    # if push_to_hub:
+    #     print("Pushing to HuggingFace Hub...")
+    #     dataset.push_to_hub()
+    #     print("Done!")
+
+
+if __name__ == "__main__":
+    tyro.cli(convert_npz_to_lerobot)
