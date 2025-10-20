@@ -201,7 +201,7 @@ class GR00T_N1_5(PreTrainedModel):
         tune_visual = kwargs.pop("tune_visual", True)    #是否微调视觉塔
         tune_llm = kwargs.pop("tune_llm", False)    #模型部分是否解冻
         tune_projector = kwargs.pop("tune_projector", True)     #action head 里连接视觉/语言特征的投影层是否可训练
-        tune_diffusion_model = kwargs.pop("tune_diffusion_model", True)    #扩散动作头主体是否训练
+        tune_diffusion_model = kwargs.pop("tune_diffusion_model", True)    #扩散动作head主体是否训练 
 
         print(f"Loading pretrained dual brain from {pretrained_model_name_or_path}")
         print(f"Tune backbone vision tower: {tune_visual}")
