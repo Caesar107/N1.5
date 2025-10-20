@@ -12,6 +12,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
+actions (B,T,d)
+   │
+   ▼
+W1 → a_emb (B,T,w)
+   │
+   ├── SinusoidalPositionalEncoding(timesteps) → tau_emb (B,T,w)
+   │
+   ▼
+concat(a_emb, tau_emb) → (B,T,2w)
+   │
+   ▼
+W2 + swish → (B,T,w)
+   │
+   ▼
+W3 → (B,T,w)
+
+"""
 
 import torch
 import torch.nn as nn
@@ -23,7 +41,7 @@ def swish(x):
 
 class SinusoidalPositionalEncoding(nn.Module):
     """
-    Produces a sinusoidal encoding of shape (B, T, w)
+    Produces a sinusoidal encoding of shape (B, T, w)    将输入的“时间步”（timesteps）映射到一个高维的**位置向量（embedding）**空间
     given timesteps of shape (B, T).
     """
 
@@ -59,10 +77,10 @@ class ActionEncoder(nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
 
-        # W1: R^{w x d}, W2: R^{w x 2w}, W3: R^{w x w}
+        # W1: R^{w x d}, W2: R^{w x 2w}, W3: R^{w x w}   动作 -> 隐层
         self.W1 = nn.Linear(action_dim, hidden_size)  # (d -> w)
-        self.W2 = nn.Linear(2 * hidden_size, hidden_size)  # (2w -> w)
-        self.W3 = nn.Linear(hidden_size, hidden_size)  # (w -> w)
+        self.W2 = nn.Linear(2 * hidden_size, hidden_size)  # (2w -> w)   动作+时间 -> 隐层
+        self.W3 = nn.Linear(hidden_size, hidden_size)  # (w -> w)   输出映射
 
         self.pos_encoding = SinusoidalPositionalEncoding(hidden_size)
 
@@ -77,6 +95,7 @@ class ActionEncoder(nn.Module):
         # 1) Expand each batch's single scalar time 'tau' across all T steps
         #    so that shape => (B, T)
         #    e.g. if timesteps is (B,), replicate across T
+        #    这里把它复制成 (B, T)，即让每个序列的每个时间点都共享同一个时间步；这样可以与 actions 的维度对齐。
         if timesteps.dim() == 1 and timesteps.shape[0] == B:
             # shape (B,) => (B,T)
             timesteps = timesteps.unsqueeze(1).expand(-1, T)
