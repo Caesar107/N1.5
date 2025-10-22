@@ -39,23 +39,23 @@ class CategorySpecificLinear(nn.Module):
         self.b = nn.Parameter(torch.zeros(num_categories, hidden_dim))
 
     def forward(self, x, cat_ids):
-        selected_W = self.W[cat_ids]
+        selected_W = self.W[cat_ids]   #不同机器人id，选取不同的权重矩阵
         selected_b = self.b[cat_ids]
         return torch.bmm(x, selected_W) + selected_b.unsqueeze(1)
 
 
-class CategorySpecificMLP(nn.Module):
+class CategorySpecificMLP(nn.Module): # 多层感知机，每层均为 CategorySpecificLinear
     def __init__(self, num_categories, input_dim, hidden_dim, output_dim):
         super().__init__()
         self.num_categories = num_categories
-        self.layer1 = CategorySpecificLinear(num_categories, input_dim, hidden_dim)
+        self.layer1 = CategorySpecificLinear(num_categories, input_dim, hidden_dim)   
         self.layer2 = CategorySpecificLinear(num_categories, hidden_dim, output_dim)
 
     def forward(self, x, cat_ids):
         hidden = F.relu(self.layer1(x, cat_ids))
         return self.layer2(hidden, cat_ids)
 
-
+ 
 class MultiEmbodimentActionEncoder(nn.Module):
     def __init__(self, action_dim, hidden_size, num_embodiments):
         super().__init__()
@@ -100,7 +100,7 @@ class MultiEmbodimentActionEncoder(nn.Module):
 
         # 5) Finally W3 => (B, T, w)
         x = self.W3(x, cat_ids)
-        return x
+        return x                                 #拼接后过 MLP
 
 
 @dataclass
@@ -196,13 +196,13 @@ class FlowmatchingActionHead(nn.Module):
             hidden_dim=self.hidden_size,
             output_dim=self.action_dim,
         )
-        self.future_tokens = nn.Embedding(config.num_target_vision_tokens, self.input_embedding_dim)
+        self.future_tokens = nn.Embedding(config.num_target_vision_tokens, self.input_embedding_dim)    #未来视觉 token（可学习的占位符，用于预测未来）
         nn.init.normal_(self.future_tokens.weight, mean=0.0, std=0.02)
 
         self.vlln = (
             nn.LayerNorm(config.backbone_embedding_dim) if config.use_vlln else nn.Identity()
         )
-        self.vl_self_attention = (
+        self.vl_self_attention = (   #视觉-语言自注意力（可选，用于增强视觉特征）
             SelfAttentionTransformer(**config.vl_self_attention_cfg)
             if config.use_vlln
             else nn.Identity()
@@ -276,7 +276,7 @@ class FlowmatchingActionHead(nn.Module):
 
         backbone_output = self.process_backbone_output(backbone_output)
 
-        if self.config.expand_batch is not None:
+        if self.config.expand_batch is not None:#把每个张量在 batch 维复制 N 份，做数据并行/增强
             for k, v in backbone_output.items():
                 ndim = len(v.shape)
                 factors = [self.config.expand_batch]
@@ -295,26 +295,27 @@ class FlowmatchingActionHead(nn.Module):
                 expanded = v.repeat(*factors)
                 action_input[k] = expanded
 
-        # Get vision and language embeddings.
+        # Get vision and language embeddings. 视觉+语言的 encoder 输出（做 cross-attention 的条件）
         vl_embs = backbone_output.backbone_features
         device = vl_embs.device
 
-        # Get embodiment ID.
+        # Get embodiment ID.不同机器人形态/关节配置的ID
         embodiment_id = action_input.embodiment_id
 
-        # Embed state.
+        # Embed state.编码“状态”（state 可能包含位姿、手爪开合、低维传感等），得到 state_features
         state_features = self.state_encoder(action_input.state, embodiment_id)
 
         # Embed noised action trajectory.
-        actions = action_input.action
+        actions = action_input.action    #真实动作 (B, T, action_dim)
         noise = torch.randn(actions.shape, device=actions.device, dtype=actions.dtype)
-        t = self.sample_time(actions.shape[0], device=actions.device, dtype=actions.dtype)
+        t = self.sample_time(actions.shape[0], device=actions.device, dtype=actions.dtype)    # t = self.sample_time(B, device, dtype)
         t = t[:, None, None]  # shape (B,1,1) for broadcast
 
-        noisy_trajectory = (1 - t) * noise + t * actions
-        velocity = actions - noise
+        noisy_trajectory = (1 - t) * noise + t * actions    #线性插值：noisy = (1-t)*noise + t*action
+        velocity = actions - noise     #目标速度场（velocity）：从噪声到真实动作的方向
 
         # Convert (continuous) t -> discrete if needed
+        # 连续 t → 离散时间桶，用于条件化编码（比如把 [0,1) 分成 K 桶）
         t_discretized = (t[:, 0, 0] * self.num_timestep_buckets).long()
         action_features = self.action_encoder(noisy_trajectory, t_discretized, embodiment_id)
 
@@ -325,6 +326,10 @@ class FlowmatchingActionHead(nn.Module):
             action_features = action_features + pos_embs
 
         # Join vision, language, state and action embedding along sequence dimension.
+        #在模型的自注意力/交叉注意力里，
+        #它们像plan/query一样去“打听”来自视觉-语言编码（vl_embs）里的关键信息，
+        #并把这些信息在时间维上传递给后面的动作位置；
+        #future tokens 为 (N_f, D) 的可学习参数，这里扩到 batch 维：(B, N_f, D)
         future_tokens = self.future_tokens.weight.unsqueeze(0).expand(vl_embs.shape[0], -1, -1)
         sa_embs = torch.cat((state_features, future_tokens, action_features), dim=1)
 
@@ -338,11 +343,13 @@ class FlowmatchingActionHead(nn.Module):
             return_all_hidden_states=False,  # NOTE (YL): not using flare now
         )
         pred = self.action_decoder(model_output, embodiment_id)
-        pred_actions = pred[:, -actions.shape[1] :]
+        pred_actions = pred[:, -actions.shape[1] :]  #只取输出里“动作”那一段（去掉前面的 state+future 部分）
 
         # Slice out only the action portion of pred and target.
+        # 用 mask 做逐元素加权的 MSE 到 **velocity**（不是直接到动作）
         action_mask = action_input.action_mask
-        loss = F.mse_loss(pred_actions, velocity, reduction="none") * action_mask
+        loss = F.mse_loss(pred_actions, velocity, reduction="none") * action_mask  #losee里面是velocity
+        #模型预测的不是“动作本身”，而是“从噪声到动作的方向向量（velocity）
         loss = loss.sum() / action_mask.sum()
         output_dict = {
             "loss": loss,
@@ -362,6 +369,7 @@ class FlowmatchingActionHead(nn.Module):
         state_features = self.state_encoder(action_input.state, embodiment_id)
 
         # Set initial actions as the sampled noise.
+        # 从纯噪声开始“生”动作： (B, action_horizon, action_dim)
         batch_size = vl_embs.shape[0]
         device = vl_embs.device
         actions = torch.randn(
@@ -373,7 +381,7 @@ class FlowmatchingActionHead(nn.Module):
         num_steps = self.num_inference_timesteps
         dt = 1.0 / num_steps
 
-        # Run denoising steps.
+        # Run denoising steps. Euler 积分
         for t in range(num_steps):
             t_cont = t / float(num_steps)  # e.g. goes 0, 1/N, 2/N, ...
             t_discretized = int(t_cont * self.num_timestep_buckets)
@@ -393,7 +401,7 @@ class FlowmatchingActionHead(nn.Module):
             future_tokens = self.future_tokens.weight.unsqueeze(0).expand(vl_embs.shape[0], -1, -1)
             sa_embs = torch.cat((state_features, future_tokens, action_features), dim=1)
 
-            # Run model forward.
+            # Run model forward. 得到 **速度场** 预测
             model_output = self.model(
                 hidden_states=sa_embs,
                 encoder_hidden_states=vl_embs,
