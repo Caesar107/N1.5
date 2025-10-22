@@ -50,12 +50,12 @@ EAGLE2_5_VL_START_DOCSTRING = r"""
     "The bare Eagle2_5_VL Model outputting raw hidden-states without any specific head on top.",
     EAGLE2_5_VL_START_DOCSTRING,
 )
-class Eagle2_5_VLPreTrainedModel(PreTrainedModel):
+class Eagle2_5_VLPreTrainedModel(PreTrainedModel):  #HF使用说明
     config_class = Eagle2_5_VLConfig
     base_model_prefix = "model"
     main_input_name = "input_ids"
     supports_gradient_checkpointing = True
-    _no_split_modules = [
+    _no_split_modules = [   #这些层不要被拆开切分。拆错会导致性能下降或错误。
         "Qwen2DecoderLayer",
         "LlamaDecoderLayer",
         "Siglip2EncoderLayer",
@@ -80,7 +80,7 @@ class Eagle2_5_VLPreTrainedModel(PreTrainedModel):
                 module.weight.data[module.padding_idx].zero_()
 
 
-class Eagle2_5_VLForConditionalGeneration(Eagle2_5_VLPreTrainedModel, GenerationMixin):
+class Eagle2_5_VLForConditionalGeneration(Eagle2_5_VLPreTrainedModel, GenerationMixin):   #配置
     config_class = Eagle2_5_VLConfig
 
     def __init__(self, config: Eagle2_5_VLConfig, vision_model=None, language_model=None):
@@ -193,7 +193,7 @@ class Eagle2_5_VLForConditionalGeneration(Eagle2_5_VLPreTrainedModel, Generation
         )
         self.vision_model = get_peft_model(self.vision_model, lora_config)
         self.vision_model.print_trainable_parameters()
-
+    #指定目标模块、秩 r、lora_alpha、lora_dropout、任务类型（LLM 为 CAUSAL_LM）
     def wrap_llm_lora(self, r=128, lora_alpha=256, lora_dropout=0.05):
         lora_config = LoraConfig(
             r=r,
@@ -214,8 +214,12 @@ class Eagle2_5_VLForConditionalGeneration(Eagle2_5_VLPreTrainedModel, Generation
         self.language_model.enable_input_require_grads()
         self.language_model.print_trainable_parameters()
         self.use_llm_lora = True
-
+    """
+    视觉编码器（ViT）提取出来的图像特征 vit_embeds，插入到文本序列的 embedding 向量中，对应到 [IMAGE] 占位符的位置
+    若 return_dict=True：返回 CausalLMOutputWithPast（含 loss/logits/past_key_values 等）否则返回 tuple (loss, logits, past_key_values, hidden_states, attentions)
+    """
     def forward(
+    
         self,
         pixel_values: torch.FloatTensor,
         input_ids: torch.LongTensor = None,
@@ -236,17 +240,17 @@ class Eagle2_5_VLForConditionalGeneration(Eagle2_5_VLPreTrainedModel, Generation
 
         vit_embeds = self.extract_feature(pixel_values)
 
-        if image_flags is not None:
+        if image_flags is not None: #image_flags 是一个标记数组（tensor），标明哪些输入属于图像
             image_flags = image_flags.view(-1)
             vit_embeds = vit_embeds[image_flags == 1]
 
-        B, N, C = input_embeds.shape
+        B, N, C = input_embeds.shape   #batch size, sequence length, embedding dim
         input_embeds = input_embeds.reshape(B * N, C)
 
         input_ids = input_ids.reshape(B * N)
         selected = input_ids == self.image_token_index
         try:
-            input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds.reshape(-1, C)
+            input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds.reshape(-1, C) #乘 0.0 是个 trick，用于避免原地操作时报梯度警告
         except Exception as e:
             vit_embeds = vit_embeds.reshape(-1, C)
             print(
@@ -293,7 +297,9 @@ class Eagle2_5_VLForConditionalGeneration(Eagle2_5_VLPreTrainedModel, Generation
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-
+    """
+    原来形状是 [1, 4, 4, 64]，scale_factor=0.5 变成 [1, 2, 2, 256]
+    """
     def pixel_shuffle(self, x, scale_factor=0.5):
         n, w, h, c = x.size()
         # N, W, H, C --> N, W, H * scale, C // scale

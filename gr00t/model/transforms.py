@@ -184,20 +184,25 @@ class GR00TTransform(InvertibleModalityTransform):
         text_content = []
 
         # handle language
-        lang = batch["language"]
+        #promt
+        # 1. 从数据里取语言标注
+        lang = batch["language"]  # 这就是 "pick the squash from the counter..."
         if isinstance(lang, list):
             lang = lang[0]
         text_content.append({"type": "text", "text": lang})
 
         eagle_images = [Image.fromarray(np.transpose(v, (1, 2, 0))) for v in np_images]
         eagle_image = [{"type": "image", "image": img} for img in eagle_images]
+        # 2. 构造对话结构（包含图像和文本）
         eagle_conversation = [
             {
                 "role": "user",
                 "content": eagle_image + text_content,
             }
         ]
-
+        #promt
+        #把一条「带有图像 / 对话结构」的样本 (eagle_conversation)  按照模型定义的 聊天模板（chat template）  渲染成一段格式化的文本 prompt，并存进列表 text_list 里。
+        # 3. 用 processor 按 chat template 渲染成 prompt
         text_list = [
             self.eagle_processor.apply_chat_template(
                 eagle_conversation, tokenize=False, add_generation_prompt=True
@@ -212,6 +217,8 @@ class GR00TTransform(InvertibleModalityTransform):
         inputs = {}
         inputs["eagle_content"] = eagle_content
         return inputs
+    # 最终生成类似：
+    # "<|im_start|>user\n<image-1><image-2>...pick the squash from the counter...<|im_end|>\n<|im_start|>assistant\n"
 
     def _prepare_video(self, data: dict):
         """Process, stack, and pad images from data['video']."""
