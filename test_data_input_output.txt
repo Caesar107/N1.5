@@ -1,0 +1,155 @@
+测试时间: 2025-12-29 13:52:00
+================================================================================
+
+[1] 加载数据配置...
+Loading external config: examples.Libero.custom_data_config.LiberoDataConfig
+video_keys: ['video.image', 'video.wrist_image']
+state_keys: ['state.x', 'state.y', 'state.z', 'state.roll', 'state.pitch', 'state.yaw', 'state.gripper']
+action_keys: ['action.x', 'action.y', 'action.z', 'action.roll', 'action.pitch', 'action.yaw', 'action.gripper']
+language_keys: ['annotation.human.action.task_description']
+observation_indices: [0]
+action_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+[2] 创建数据集...
+Initialized dataset data_spatial_converted with EmbodimentTag.NEW_EMBODIMENT
+数据集大小: 62250 个样本
+
+================================================================================
+[3] 检查前3个样本的数据格式
+================================================================================
+
+============================== 样本 0 ==============================
+
+>>> 输入 VLM 的数据 (eagle_content):
+  image_inputs: 2 张图像
+    image_0: size=(224, 224), mode=RGB
+    image_1: size=(224, 224), mode=RGB
+  video_inputs: None
+  text_list:
+    '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<image-1><image-2>pick up the black bowl between the plate and the ramekin and place it on the plate<|im_end|>\n<|im_start|>as'...
+
+>>> State (输入到模型的状态):
+  shape: (1, 64)
+  dtype: float64
+  有效维度 (mask=True): 8
+  有效值 (前8个):
+    x=-0.555053, y=-0.165339, z=0.260793
+    roll=0.251570, pitch=-0.158403, yaw=0.065374
+    gripper=[0.761831, -0.774332]
+
+>>> Action (训练目标 / Action Head 输出目标):
+  shape: (16, 32)  (action_horizon=16, max_action_dim=32)
+  dtype: float64
+  每步有效维度 (mask=True): 7
+  前3个时间步的有效值 (前7个):
+    t=0: x=0.0686, y=0.0000, z=0.0886, roll=-0.0222, pitch=0.2116, yaw=-0.0204, gripper=-1.0000
+    t=1: x=0.0829, y=0.0000, z=0.1171, roll=-0.0222, pitch=0.1781, yaw=-0.0204, gripper=-1.0000
+    t=2: x=0.1486, y=0.0514, z=0.1943, roll=-0.0222, pitch=0.1903, yaw=-0.0204, gripper=-1.0000
+
+>>> Embodiment ID: 31
+
+============================== 样本 1 ==============================
+
+>>> 输入 VLM 的数据 (eagle_content):
+  image_inputs: 2 张图像
+    image_0: size=(224, 224), mode=RGB
+    image_1: size=(224, 224), mode=RGB
+  video_inputs: None
+  text_list:
+    '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<image-1><image-2>pick up the black bowl between the plate and the ramekin and place it on the plate<|im_end|>\n<|im_start|>as'...
+
+>>> State (输入到模型的状态):
+  shape: (1, 64)
+  dtype: float64
+  有效维度 (mask=True): 8
+  有效值 (前8个):
+    x=-0.553403, y=-0.165360, z=0.264915
+    roll=0.251492, pitch=-0.165613, yaw=0.065659
+    gripper=[0.821346, -0.832882]
+
+>>> Action (训练目标 / Action Head 输出目标):
+  shape: (16, 32)  (action_horizon=16, max_action_dim=32)
+  dtype: float64
+  每步有效维度 (mask=True): 7
+  前3个时间步的有效值 (前7个):
+    t=0: x=0.0829, y=0.0000, z=0.1171, roll=-0.0222, pitch=0.1781, yaw=-0.0204, gripper=-1.0000
+    t=1: x=0.1486, y=0.0514, z=0.1943, roll=-0.0222, pitch=0.1903, yaw=-0.0204, gripper=-1.0000
+    t=2: x=0.4000, y=0.2486, z=0.2571, roll=-0.0222, pitch=0.2359, yaw=-0.0204, gripper=-1.0000
+
+>>> Embodiment ID: 31
+
+============================== 样本 2 ==============================
+
+>>> 输入 VLM 的数据 (eagle_content):
+  image_inputs: 2 张图像
+    image_0: size=(224, 224), mode=RGB
+    image_1: size=(224, 224), mode=RGB
+  video_inputs: None
+  text_list:
+    '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<image-1><image-2>pick up the black bowl between the plate and the ramekin and place it on the plate<|im_end|>\n<|im_start|>as'...
+
+>>> State (输入到模型的状态):
+  shape: (1, 64)
+  dtype: float64
+  有效维度 (mask=True): 8
+  有效值 (前8个):
+    x=-0.550015, y=-0.164567, z=0.271843
+    roll=0.251686, pitch=-0.171681, yaw=0.065563
+    gripper=[0.855022, -0.865296]
+
+>>> Action (训练目标 / Action Head 输出目标):
+  shape: (16, 32)  (action_horizon=16, max_action_dim=32)
+  dtype: float64
+  每步有效维度 (mask=True): 7
+  前3个时间步的有效值 (前7个):
+    t=0: x=0.1486, y=0.0514, z=0.1943, roll=-0.0222, pitch=0.1903, yaw=-0.0204, gripper=-1.0000
+    t=1: x=0.4000, y=0.2486, z=0.2571, roll=-0.0222, pitch=0.2359, yaw=-0.0204, gripper=-1.0000
+    t=2: x=0.6314, y=0.4200, z=0.2657, roll=-0.0222, pitch=0.2451, yaw=-0.0204, gripper=-1.0000
+
+>>> Embodiment ID: 31
+
+================================================================================
+[4] 加载模型检查配置
+================================================================================
+
+正在加载模型 nvidia/GR00T-N1.5-3B ...
+Loading pretrained dual brain from nvidia/GR00T-N1.5-3B
+Tune backbone vision tower: False
+Tune backbone LLM: False
+Tune action head projector: True
+Tune action head DiT: True
+Tune backbone llm: False
+Tune backbone visual: True
+Total number of DiT parameters:  550386688
+Total number of SelfAttentionTransformer parameters:  201433088
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune backbone llm: False
+Tune backbone visual: False
+Warning: No backbone trainable parameters found.
+Tune action head projector: True
+Tune action head diffusion model: True
+
+>>> 模型配置:
+  action_dim: 32
+  action_horizon: 16
+  compute_dtype: float32
+
+>>> Action Head 配置:
+  action_dim: 32
+  action_horizon: 16
+
+================================================================================
+[5] 对比分析
+================================================================================
+
+>>> 数据 vs 模型:
+  action_dim:     数据=7, 模型=32
+  action_horizon: 数据=16, 模型=16
+
+  ✅ action_horizon 匹配
+  ⚠️ action_dim 不匹配! 训练时会自动调整 action head
+
+================================================================================
+测试完成!
+================================================================================

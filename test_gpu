@@ -1,0 +1,49 @@
+import torch
+import time
+
+def benchmark_gpu(iterations=1000, size=4096):
+    # 确保使用 bfloat16，这是 Blackwell 架构的强项
+    dtype = torch.bfloat16 
+    device = torch.device("cuda")
+    
+    if not torch.cuda.is_available():
+        print("未检测到 GPU")
+        return
+
+    # 获取设备名称
+    device_name = torch.cuda.get_device_name(0)
+
+    # 1. 准备极小量数据 (仅占约 64MB 显存)
+    with torch.no_grad():
+        a = torch.randn(size, size, device=device, dtype=dtype)
+        b = torch.randn(size, size, device=device, dtype=dtype)
+        
+        # 预热，消除冷启动影响
+        for _ in range(10):
+            torch.mm(a, b)
+        torch.cuda.synchronize()
+
+        # 2. 开始正式测试
+        start_time = time.perf_counter()
+        
+        for _ in range(iterations):
+            _ = torch.mm(a, b)
+        
+        torch.cuda.synchronize() # 强制等待所有 GPU 任务完成
+        end_time = time.perf_counter()
+
+    # 3. 计算结果
+    total_ms = (end_time - start_time) * 1000
+    avg_ms = total_ms / iterations
+
+    # 4. 打印你看到的这种格式
+    print("=" * 40)
+    print(f"设备名称: {device_name}")
+    print(f"矩阵大小: {size} x {size}")
+    print(f"数据精度: {dtype}")
+    print(f"总计耗时: {total_ms:.4f} ms")
+    print(f"平均单次耗时: {avg_ms:.4f} ms")
+    print("=" * 40 + "\n")
+
+if __name__ == "__main__":
+    benchmark_gpu()
